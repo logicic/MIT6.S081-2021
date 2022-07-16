@@ -303,27 +303,33 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
+  acquire_rc_lock();
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    if (*pte & PTE_W){
+      *pte |= PTE_COW;
+      *pte &= ~PTE_W;
+    }
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
       goto err;
     }
+    inc_ref_cnt(pa);
   }
+  release_rc_lock();
   return 0;
 
  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
+  release_rc_lock();
   return -1;
 }
 
@@ -347,9 +353,12 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
-
+  int res;
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    res = address_translation_with_cow_page(pagetable, va0);
+    if (res < 0)
+      return -1;
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
@@ -431,4 +440,67 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int
+address_translation_with_cow_page(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  uint64 pa;
+  uint flags;
+  void *mem;
+
+  if (va >= MAXVA) // Unauthorized access to the highest bit address
+  {
+    return -1;
+  }
+  va = PGROUNDDOWN(va); // restore va no offset
+  if ((pte = walk(pagetable, va, 0)) == 0){
+    printf("address_translation_with_cow_page: pte should exist\n");
+    return -1;
+  }
+
+  if ((*pte & PTE_V) == 0){
+    printf("address_translation_with_cow_page: page not present\n");
+    return -1;
+  }
+
+  if(*pte & PTE_W) {  // it is not cow page
+    return 0;
+  }
+
+  if (!(*pte & PTE_COW)){
+    printf("cow bit isnot set\n");
+    return -1;
+  }
+
+  pa = PTE2PA(*pte);
+  if (pa > PHYSTOP){
+    printf("phy addr error\n");
+    return -1;
+  }
+
+  acquire_rc_lock();
+  int ref_cnt = get_ref_cnt(pa);
+  if (ref_cnt == 1){
+    *pte |= PTE_W;
+    *pte &= ~PTE_COW;
+  }else {
+    // alloc new phy address
+    mem = kalloc();
+    if (mem == 0){
+      printf("alloc memory failed!\n");
+      release_rc_lock();
+      return -1;
+    }
+    memmove(mem, (void*)pa, PGSIZE); // copy old phy address content to new
+    flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
+    uvmunmap(pagetable, va, 1, 1);
+    if (mappages(pagetable, va, PGSIZE, (uint64)mem, flags) != 0){
+      release_rc_lock();
+      return  1;
+    }
+  }
+  release_rc_lock();
+  return 0;
 }
