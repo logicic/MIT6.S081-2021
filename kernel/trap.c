@@ -78,7 +78,19 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
+  {
+    if(p->alarm_call_exist == 1 && p->alarm_allow_handle == 1){
+      p->alarm_elapsed_time++;
+      if(p->alarm_elapsed_time > p->interval){
+        *p->alarm_saved_trapframe = *p->trapframe; // save current process frame
+        p->trapframe->epc = p->handler; // set return address as handler
+        p->alarm_allow_handle = 0;  // before handler return not allow time interrupt
+        p->alarm_elapsed_time = 0;  // clear timer
+      }
+    }
     yield();
+  }
+    
 
   usertrapret();
 }

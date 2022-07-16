@@ -97,3 +97,39 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64 
+sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+  if(p->alarm_call_exist == 1){
+    *p->trapframe = *p->alarm_saved_trapframe;
+    p->alarm_allow_handle = 1; // allow handle, when not in the handler function
+  }
+
+  return 0;
+}
+
+uint64 
+sys_sigalarm(void)
+{
+  int ticks;
+  uint64 funaddr; // pointer to function
+  if ((argint(0, &ticks) < 0) || (argaddr(1, &funaddr) < 0)) {
+    return -1;
+  }
+  struct proc *p = myproc();
+  if (ticks == 0 && p->alarm_call_exist == 1){
+    p->alarm_call_exist = 0;
+    *p->trapframe = *p->alarm_saved_trapframe;
+    return 0;
+  }
+  
+  printf("alarm tick %d handler %p\n", ticks, funaddr);
+  p->alarm_call_exist = 1; // alarm work
+  p->alarm_allow_handle = 1; // allow handle, when not in the handler function
+  p->interval = ticks;
+  p->handler = funaddr;
+  p->alarm_elapsed_time = 0;  // start the timer
+  return 0;
+}

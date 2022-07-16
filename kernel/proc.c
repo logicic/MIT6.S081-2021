@@ -126,6 +126,14 @@ found:
     release(&p->lock);
     return 0;
   }
+  // Allocate a alarm_trapframe page
+  if((p->alarm_saved_trapframe = (struct trapframe *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  p->alarm_call_exist = 0;
+  p->alarm_allow_handle = 0;
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
