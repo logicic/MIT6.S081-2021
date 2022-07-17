@@ -55,6 +55,13 @@ void put(int key, int value)
   } else {
     // the new is new.
     pthread_mutex_lock(&lock);       // acquire lock
+    // double check
+    if (table[i]){
+      if (table[i]->key == key){
+        pthread_mutex_unlock(&lock);     // release lock
+        return;    
+      }
+    }
     insert(key, value, &table[i], table[i]);
     pthread_mutex_unlock(&lock);     // release lock
   }

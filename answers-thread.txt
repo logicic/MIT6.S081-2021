@@ -1,0 +1,2 @@
+when the thread insert the new entry, the table[i] head will be added by the new entry. 
+when multiple threads use the same table[i] head, it will be replaced by different new entry.
