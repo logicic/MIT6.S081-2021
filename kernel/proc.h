@@ -1,3 +1,15 @@
+#define MAXVMA 16
+struct vma {
+  int valid;                // whether the vma is valid
+  uint64 addr;              // starting virtual address of vma
+  int len;                  // length of vma, unit: bytes
+  int prot;                 // permission
+  int flags;                // flag
+  struct file *f;           // pointer to mapped file
+  int off;                  // offset of the valid mapped address
+  int valid_len;            // length of the valid mapped address
+};
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -105,4 +117,5 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  struct vma procvma[MAXVMA]; // process vma
 };
